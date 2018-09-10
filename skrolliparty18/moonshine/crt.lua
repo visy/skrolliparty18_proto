@@ -20,54 +20,89 @@ return function(moonshine)
   -- Added feather to mask out outside of distorted texture
   local distortionFactor
   local shader = love.graphics.newShader[[
-    extern vec2 distortionFactor;
-    extern vec2 scaleFactor;
-    extern number feather;
+    extern number time;
 
+    vec2 curve(vec2 uv)
+    {
+      uv = (uv - 0.5) * 2.0;
+      uv *= 1.1;  
+      uv.x *= 1.0 + pow((abs(uv.y) / 5.0), 2.0);
+      uv.y *= 1.0 + pow((abs(uv.x) / 4.0), 2.0);
+      uv  = (uv / 2.0) + 0.5;
+      uv =  uv *0.92 + 0.04;
+      return uv;
+    }
     vec4 effect(vec4 color, Image tex, vec2 uv, vec2 px) {
-      // to barrel coordinates
-      uv = uv * 2.0 - vec2(1.0);
 
-      // distort
-      uv *= scaleFactor;
-      uv += (uv.yx*uv.yx) * uv * (distortionFactor - 1.0);
-      number mask = (1.0 - smoothstep(1.0-feather,1.0,abs(uv.x)))
-                  * (1.0 - smoothstep(1.0-feather,1.0,abs(uv.y)));
+        vec2 q = uv;
+  
+        uv.x-=0.05;
+        uv.y-=0.05;
 
-      // to cartesian coordinates
-      uv = (uv + vec2(1.0)) / 2.0;
 
-      return color * Texel(tex, uv) * mask;
+        number iTime = time;
+        vec2 iResolution = px;
+
+
+        uv = curve( uv );
+        uv *=1.1;
+        vec3 oricol = Texel(tex, vec2(q.x,q.y) ).xyz;
+        vec3 col;
+      number x =  sin(0.3*iTime+uv.y*21.0)*sin(0.7*iTime+uv.y*29.0)*sin(0.3+0.33*iTime+uv.y*31.0)*0.0017;
+
+        col.r = Texel(tex,vec2(x+uv.x+0.001,uv.y+0.001)).x+0.05;
+        col.g = Texel(tex,vec2(x+uv.x+0.000,uv.y-0.002)).y+0.05;
+        col.b = Texel(tex,vec2(x+uv.x-0.002,uv.y+0.000)).z+0.05;
+        col.r += 0.08*Texel(tex,0.75*vec2(x+0.025, -0.027)+vec2(uv.x+0.001,uv.y+0.001)).x;
+        col.g += 0.05*Texel(tex,0.75*vec2(x+-0.022, -0.02)+vec2(uv.x+0.000,uv.y-0.002)).y;
+        col.b += 0.08*Texel(tex,0.75*vec2(x+-0.02, -0.018)+vec2(uv.x-0.002,uv.y+0.000)).z;
+
+        col = clamp(col*0.6+0.4*col*col*1.0,0.0,1.0);
+
+        number vig = (0.0 + 1.0*16.0*uv.x*uv.y*(1.0-uv.x)*(1.0-uv.y));
+      col *= vec3(pow(vig,0.3));
+
+        col *= vec3(0.95,1.05,0.95);
+      col *= 2.8;
+
+      number scans = clamp( 0.35+0.35*sin(3.5*iTime+uv.y*1000.5), 0.0, 1.0);
+      
+      number s = pow(scans,1.7);
+      col = col*vec3( 0.4+0.7*s) ;
+
+        col *= 1.0+0.01*sin(110.0*iTime);
+      if (uv.x < 0.0 || uv.x > 1.0)
+        col *= 0.0;
+      if (uv.y < 0.0 || uv.y > 1.0)
+        col *= 0.0;
+      
+      col*=1.0-0.65*vec3(clamp((mod(uv.x, 2.0)-1.0)*2.0,0.0,1.0));
+      
+        number comp = smoothstep( 0.1, 0.9, sin(iTime) );
+     
+      // Remove the next line to stop cross-fade between original and postprocess
+    //  col = mix( col, oricol, comp );
+
+        return vec4(col,1.0);
     }
   ]]
 
+
+
+
+
+
+
+
+
+
   local setters = {}
 
-  setters.distortionFactor = function(v)
-    assert(type(v) == "table" and #v == 2, "Invalid value for `distortionFactor'")
-    distortionFactor = {unpack(v)}
-    shader:send("distortionFactor", v)
-  end
 
-  setters.x = function(v) setters.distortionFactor{v, distortionFactor[2]} end
-  setters.y = function(v) setters.distortionFactor{distortionFactor[1], v} end
-
-  setters.scaleFactor = function(v)
-    if type(v) == "table" and #v == 2 then
-      shader:send("scaleFactor", v)
-    elseif type(v) == "number" then
-      shader:send("scaleFactor", {v,v})
-    else
-      error("Invalid value for `scaleFactor'")
-    end
-  end
-
-  setters.feather = function(v) shader:send("feather", v) end
+  setters.time = function(v) shader:send("time", v) end
 
   local defaults = {
-    distortionFactor = {1.06, 1.065},
-    feather = 0.02,
-    scaleFactor = 1,
+    time = 0.
   }
 
   return moonshine.Effect{
